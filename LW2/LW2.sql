@@ -21,13 +21,12 @@ CREATE OR REPLACE TRIGGER students_check_id
 FOR INSERT OR UPDATE ON Students
 COMPOUND TRIGGER -- compound trigger is needed because select during update is not possible, beforehand copy is required
    TYPE id_set IS TABLE OF Boolean INDEX BY PLS_INTEGER; -- associative array of ids which can be indexed by integers (regular array doesn't allow unordered ids)
-
    student_ids id_set;
 
    BEFORE STATEMENT IS
    BEGIN
       FOR rec IN (SELECT id FROM Students) LOOP --set of table ids
-          student_ids(rec.id) :=1;
+          student_ids(rec.id) :=true;
       END LOOP;
    END BEFORE STATEMENT;
 
@@ -39,76 +38,39 @@ COMPOUND TRIGGER -- compound trigger is needed because select during update is n
       IF student_ids.EXISTS(:NEW.id) THEN -- check if id already in table
          RAISE_APPLICATION_ERROR(-20001, 'ID must be unique');
       ELSE
-         student_ids(:NEW.id) := 1;
+         student_ids(:NEW.id) := true;
       END IF;
    END AFTER EACH ROW;
 END students_check_id;
 /
 
 
-
-
-
-
-
-
-
-
-
-
-
 CREATE OR REPLACE TRIGGER groups_check_id 
 FOR INSERT OR UPDATE ON Groups
-COMPOUND TRIGGER -- compound trigger is needed because select during update is not possible, beforehand copy is required
-
-   TYPE table_type IS TABLE OF Groups%ROWTYPE;
-   group_table table_type := table_type();
-   new_row Groups%ROWTYPE;
+COMPOUND TRIGGER
+   TYPE id_set IS TABLE OF Boolean INDEX BY PLS_INTEGER;
+   group_ids id_set;
 
    BEFORE STATEMENT IS
    BEGIN
-      FOR rec IN (SELECT * FROM Groups) LOOP --copy of table before operations
-         group_table.EXTEND;
-         group_table(group_table.LAST) := rec;
+      FOR rec IN (SELECT id FROM Groups) LOOP
+          group_ids(rec.id) :=true;
       END LOOP;
    END BEFORE STATEMENT;
 
    AFTER EACH ROW IS
    BEGIN
-      IF UPDATING THEN -- if updating old version of row needs to be removed
-        FOR i IN 1 .. group_table.COUNT LOOP
-          IF group_table(i).id = :OLD.id THEN
-            group_table.DELETE(i);
-            EXIT;
-          END IF;
-        END LOOP;
+      IF UPDATING THEN
+        group_ids.DELETE(:OLD.id); 
       END IF;
-      FOR i IN 1 .. group_table.COUNT LOOP -- compare new record with all old records
-        IF group_table(i).id = :NEW.id THEN
-           RAISE_APPLICATION_ERROR(-20001, 'ID must be unique');
-        END IF;
-      END LOOP;
-      group_table.EXTEND; -- add new record to copy
-      new_row.id := :NEW.id;
-      new_row.name := :NEW.name;
-      group_table(group_table.LAST) := new_row;
+      IF group_ids.EXISTS(:NEW.id) THEN
+         RAISE_APPLICATION_ERROR(-20001, 'ID must be unique');
+      ELSE
+         group_ids(:NEW.id) := true;
+      END IF;
    END AFTER EACH ROW;
 END groups_check_id;
 /
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -154,21 +116,33 @@ END;
 
 
 
-CREATE OR REPLACE TRIGGER groups_check_name 
-BEFORE INSERT OR UPDATE ON Groups
-FOR EACH ROW
-DECLARE
-    non_unique_name_cnt Number;
-BEGIN
-    SELECT count(*) INTO non_unique_name_cnt
-    FROM Groups
-    WHERE name = :NEW.name AND ROWNUM=1; -- null == null returns false, so null would pass
+CREATE OR REPLACE TRIGGER groups_check_name
+FOR INSERT OR UPDATE ON Groups
+COMPOUND TRIGGER
+   TYPE name_set IS TABLE OF Boolean INDEX BY PLS_INTEGER;
+   group_names name_set;
 
-    IF non_unique_name_cnt != 0 THEN
-        RAISE_APPLICATION_ERROR(-20001, 'Non-unique name insert ''' || :NEW.name || '''');
-    END IF;
-END;
+   BEFORE STATEMENT IS
+   BEGIN
+      FOR rec IN (SELECT name FROM Groups) LOOP
+          group_names(rec.name) :=true;
+      END LOOP;
+   END BEFORE STATEMENT;
+
+   AFTER EACH ROW IS
+   BEGIN
+      IF UPDATING THEN
+        group_names.DELETE(:OLD.name); 
+      END IF;
+      IF group_names.EXISTS(:NEW.name) THEN
+         RAISE_APPLICATION_ERROR(-20001, 'Name must be unique');
+      ELSE
+         group_names(:NEW.name) := true;
+      END IF;
+   END AFTER EACH ROW;
+END groups_check_name;
 /
+
 
 
 
@@ -221,18 +195,90 @@ END;
 -- #4
 DROP Table StudentLog;
 CREATE Table StudentLog(
-    id number NOT NULL,
     operation varchar2(100),
     st_id number NOT NULL,
     st_name varchar2(100),
-    st_group_id number
+    st_group_id number,
+    operation_date timestamp
 );
 
+CREATE OR REPLACE TRIGGER log_students
+AFTER INSERT OR UPDATE OR DELETE ON Students
+FOR EACH ROW
+BEGIN
+    IF INSERTING THEN
+        INSERT INTO StudentLog (operation, st_id,st_name,st_group_id,operation_date)
+        VALUES ('Insert', :NEW.id, :New.name, :New.group_id, CURRENT_TIMESTAMP);
+    ELSIF DELETING THEN
+        INSERT INTO StudentLog (operation, st_id,st_name,st_group_id,operation_date)
+        VALUES ('Delete', :OLD.id, :OLD.name, :OLD.group_id, CURRENT_TIMESTAMP);
+    ELSIF UPDATING THEN
+        INSERT INTO StudentLog (operation, st_id,st_name,st_group_id,operation_date)
+        VALUES ('Delete', :OLD.id, :OLD.name, :OLD.group_id, CURRENT_TIMESTAMP);
+        INSERT INTO StudentLog (operation, st_id,st_name,st_group_id,operation_date)
+        VALUES ('Insert', :NEW.id, :New.name, :New.group_id, CURRENT_TIMESTAMP);
+    END IF;
+END;
+/
 
 
 
 -- #5
+CREATE OR REPLACE PROCEDURE rollback_students_to_timestamp(
+    ts Timestamp
+)
+IS
+BEGIN
+    FOR log_rec IN ( -- subquery for all revertable operations
+        SELECT operation, st_id, st_name, st_group_id
+        FROM StudentLog
+        WHERE operation_date >= ts
+        ORDER BY operation_date DESC
+    )
+    LOOP
+        IF log_rec.operation = 'Delete' THEN
+            INSERT INTO Students (id, name, group_id)
+            VALUES (log_rec.st_id, log_rec.st_name, log_rec.st_group_id);
+        ELSIF log_rec.operation = 'Insert' THEN
+            DELETE FROM Students 
+            WHERE id = log_rec.st_id;
+        END IF;
+    END LOOP;
+    
+    DELETE FROM StudentLog -- removing logs for reverted operations
+    WHERE operation_date >= ts;
+END;
+/
 
+
+
+CREATE OR REPLACE PROCEDURE rollback_students_by_interval(
+    revert_interval INTERVAL DAY TO SECOND
+)
+IS
+    ts Timestamp;
+BEGIN
+    ts:= CURRENT_TIMESTAMP - revert_interval;
+    FOR log_rec IN ( -- subquery for all revertable operations
+        SELECT operation, st_id, st_name, st_group_id
+        FROM StudentLog
+        WHERE operation_date >= ts
+        ORDER BY operation_date DESC
+    )
+    LOOP
+        IF log_rec.operation = 'Delete' THEN
+            INSERT INTO Students (id, name, group_id)
+            VALUES (log_rec.st_id, log_rec.st_name, log_rec.st_group_id);
+        ELSIF log_rec.operation = 'Insert' THEN
+            DELETE FROM Students 
+            WHERE id = log_rec.st_id;
+        END IF;
+    END LOOP;
+    
+    DELETE FROM StudentLog -- removing logs for reverted operations
+    WHERE operation_date >= ts;
+END;
+/
 
 
 
@@ -243,7 +289,6 @@ FOR EACH ROW
 DECLARE
     cascade_delete NUMBER;
 BEGIN
-
     IF INSERTING THEN
         UPDATE Groups SET c_val = c_val + 1
         WHERE id = :NEW.group_id;
@@ -271,17 +316,19 @@ END;
 
 
 
-INSERT INTO Groups (id,name, c_val) 
-VALUES (1,'153003', 0);
+
+INSERT INTO Groups (name, c_val) 
+VALUES ('153003', 0);
 
 INSERT INTO Students (name, group_id) 
 VALUES ('Petr', 1);
     
 Select * FROM Groups;
 Select * FROM Students;
+SELECT * FROM StudentLog;
 
-UPDATE Students SET id = 3
-WHERE id = 4;
+UPDATE Students SET id = 5
+WHERE id = 2;
 UPDATE Groups SET id = 3;
     
 DELETE FROM Groups
@@ -289,5 +336,29 @@ WHERE id = 1;
 
 DELETE FROM Students;
 
+DELETE FROM Students
+WHERE Id=3;
+
 UPDATE GROUPS SET name = '153003'
 WHERE name = '153003';
+
+
+
+select * From dba_triggers
+WHERE table_owner = 'SYSTEM';
+
+
+select * From dba_triggers
+WHERE table_owner = 'SYSTEM' and table_name = 'STUDENTS';
+
+Begin
+    rollback_students_to_timestamp(CURRENT_TIMESTAMP - INTERVAL '1' HOUR);
+END;
+
+Begin
+    rollback_students_to_timestamp(CURRENT_TIMESTAMP - INTERVAL '5' SECOND);
+END;
+
+Begin
+    rollback_students_by_interval(INTERVAL '99' DAY);
+END;
