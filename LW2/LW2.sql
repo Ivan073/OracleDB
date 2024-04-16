@@ -316,12 +316,11 @@ END;
 
 
 
-
 INSERT INTO Groups (name, c_val) 
-VALUES ('153003', 0);
+VALUES ('153005', 20);
 
 INSERT INTO Students (name, group_id) 
-VALUES ('Petr', 1);
+VALUES ('Petr', 4);
     
 Select * FROM Groups;
 Select * FROM Students;
