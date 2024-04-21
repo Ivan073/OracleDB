@@ -25,6 +25,7 @@ COMPOUND TRIGGER -- compound trigger is needed because select during update is n
 
    BEFORE STATEMENT IS
    BEGIN
+   
       FOR rec IN (SELECT id FROM Students) LOOP --set of table ids
           student_ids(rec.id) :=true;
       END LOOP;
@@ -316,11 +317,11 @@ END;
 
 
 
-INSERT INTO Groups (name, c_val) 
-VALUES ('153005', 20);
+INSERT INTO Groups (id,name, c_val) 
+VALUES (1,'153125', 0);
 
 INSERT INTO Students (name, group_id) 
-VALUES ('Petr', 4);
+VALUES ('Petr', 1);
     
 Select * FROM Groups;
 Select * FROM Students;
@@ -359,5 +360,5 @@ Begin
 END;
 
 Begin
-    rollback_students_by_interval(INTERVAL '99' DAY);
+    rollback_students_by_interval(INTERVAL '2' MINUTE);
 END;
