@@ -53,3 +53,10 @@ BEGIN
    END;
 END;
 /
+
+
+--indexes
+
+CREATE INDEX table4_index ON TestTable4 (id2);
+
+CREATE INDEX table1_index ON TestTable1 (id);

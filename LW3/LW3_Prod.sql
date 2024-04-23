@@ -9,6 +9,12 @@ CREATE TABLE TestTable3(
     id2 number
 );
 
+DROP TABLE TestTable6;
+CREATE TABLE TestTable6(
+    id number unique,
+    id2 number unique
+);
+
 
 CREATE OR REPLACE FUNCTION func1
 RETURN Number IS
@@ -25,3 +31,6 @@ BEGIN
    END;
 END;
 /
+
+
+CREATE INDEX table1_index ON TestTable1 (id);
