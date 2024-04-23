@@ -15,7 +15,7 @@ CREATE TABLE TestTable6(
     id2 number unique
 );
 
-
+DROP FUNCTION func1;
 CREATE OR REPLACE FUNCTION func1
 RETURN Number IS
 BEGIN
@@ -23,6 +23,7 @@ BEGIN
 END;
 /
 
+DROP PROCEDURE proc1;
 CREATE OR REPLACE PROCEDURE proc1
 IS
 BEGIN
@@ -33,4 +34,17 @@ END;
 /
 
 
+
 CREATE INDEX table1_index ON TestTable1 (id);
+
+
+
+
+
+
+DROP TABLE TESTTABLE2;
+
+
+
+
+
