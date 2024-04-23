@@ -6,19 +6,25 @@ GRANT ALL PRIVILEGES TO c##prod;
 
 
 
-CREATE OR REPLACE FUNCTION compare_schemas(
+CREATE OR REPLACE FUNCTION compare_schemas( -- must be started by SYS, because SYSTEM can't see other users functions (SELECT ANY DICTIONARY privelege)
   dev_schema_name IN VARCHAR2,
   prod_schema_name IN VARCHAR2
-) RETURN SYS.ODCIVARCHAR2LIST IS
-  table_names SYS.ODCIVARCHAR2LIST; -- array of strings
-  current_fk_table_names SYS.ODCIVARCHAR2LIST; -- will contain related tables for current table
-  i number:=1;
+) RETURN SYS.ODCIVARCHAR2LIST IS   -- array of strings
+  table_names SYS.ODCIVARCHAR2LIST; -- tables to be added
+  func_names SYS.ODCIVARCHAR2LIST:= SYS.ODCIVARCHAR2LIST(); -- funcs to be added
+  proc_names SYS.ODCIVARCHAR2LIST:= SYS.ODCIVARCHAR2LIST(); -- procs to be added
+  dev_proc_names SYS.ODCIVARCHAR2LIST; -- temp for procs
+  dev_func_names SYS.ODCIVARCHAR2LIST; -- temp for funcs
+  current_fk_table_names SYS.ODCIVARCHAR2LIST; -- temp for related tables for current table
+  i number:=1; -- indexes for loops
   j number:=1;
   k number:=1;
   l number:=1;
-  creatable boolean:=true;
-  temp varchar2(500);
+  temp_number number;
+  creatable boolean:=true; -- temp flag for tables with fks 
+  temp varchar2(500); -- temp for names
 BEGIN
+    --get differing table names
     SELECT differing_tables BULK COLLECT INTO table_names FROM ( -- names put into separate collection for further sorting
         SELECT table_name AS differing_tables
         FROM all_tables
@@ -56,15 +62,15 @@ BEGIN
             )
     );
     
-   
     
-  LOOP -- sorting by foreign key (similar to selection sort)
+  --sort differing table names
+  LOOP -- sorting tables by foreign key (similar to selection sort)
      -- i - index of current element in unsorted part (starts at 1)
      -- j - index of sorted part border
      
     IF i > table_names.COUNT  THEN 
       IF i!=j THEN -- reached end but not all sorted
-        DBMS_OUTPUT.PUT_LINE('Discrepant tables have foreign key loop:');
+         DBMS_OUTPUT.PUT_LINE('Discrepant tables have foreign key loop:');
          FOR k in j..table_names.COUNT
          LOOP
            DBMS_OUTPUT.PUT_LINE(table_names(k));
@@ -112,8 +118,61 @@ BEGIN
     
     i := i + 1;
   END LOOP;  
+  
+  
+  --get differing func names
+  FOR dev_func IN (SELECT object_name, DBMS_METADATA.GET_DDL(object_type, object_name, schema=>dev_schema_name) as ddl_text
+                    FROM all_objects
+                    WHERE object_type = 'FUNCTION'
+                    AND owner = dev_schema_name)
+    LOOP
+        SELECT COUNT(*) INTO temp_number FROM all_objects  --same function with same ddl     
+        WHERE owner = prod_schema_name
+        AND object_type = 'FUNCTION'
+        AND object_name = dev_func.object_name
+        AND 
+        DBMS_LOB.SUBSTR( --converts clob (large text) to nvarchar to prevent comparing type errors
+            REGEXP_REPLACE( --replaces first prod schema mention to dev schema (to make ddl same)
+                DBMS_METADATA.GET_DDL(object_type, object_name, schema=>prod_schema_name),
+                '(^|[^a-zA-Z_0-9])' || prod_schema_name || '([^a-zA-Z_0-9]|$)', '\1' || dev_schema_name || '\2', 1, 1)
+            , 32767, 1)
+        = DBMS_LOB.SUBSTR(dev_func.ddl_text, 32767, 1);                  
+            
+        IF temp_number != 1 THEN
+            func_names.EXTEND;
+            func_names(func_names.COUNT) := dev_func.object_name;
+            temp:=dev_func.object_name;                  
+        END IF;
+    END LOOP;
     
-  RETURN table_names;
+    
+    --get differing proc names
+  FOR dev_proc IN (SELECT object_name, DBMS_METADATA.GET_DDL(object_type, object_name, schema=>dev_schema_name) as ddl_text
+                    FROM all_objects
+                    WHERE object_type = 'PROCEDURE'
+                    AND owner = dev_schema_name)
+    LOOP
+        SELECT COUNT(*) INTO temp_number FROM all_objects
+        WHERE owner = prod_schema_name
+        AND object_type = 'PROCEDURE'
+        AND object_name = dev_proc.object_name
+        AND 
+        DBMS_LOB.SUBSTR( --converts clob (large text) to nvarchar to prevent comparing type errors
+            REGEXP_REPLACE( --replaces first prod schema mention to dev schema (to make ddl same)
+                DBMS_METADATA.GET_DDL(object_type, object_name, schema=>prod_schema_name),
+                '(^|[^a-zA-Z_0-9])' || prod_schema_name || '([^a-zA-Z_0-9]|$)', '\1' || dev_schema_name || '\2', 1, 1)
+            , 32767, 1)
+        = DBMS_LOB.SUBSTR(dev_proc.ddl_text, 32767, 1);                  
+            
+        IF temp_number != 1 THEN
+            proc_names.EXTEND;
+            proc_names(func_names.COUNT) := dev_proc.object_name;
+            temp:=dev_proc.object_name;                  
+        END IF;
+    END LOOP;
+  
+    
+  RETURN proc_names;
 END;
 /
 
@@ -129,25 +188,48 @@ END;
 
 SELECT compare_schemas('C##DEV' , 'C##PROD') FROM DUAL;
 
-SELECT * FROM all_tables
-WHERE OWNER = 'C##PROD';
-SELECT * FROM all_tables
-WHERE OWNER = 'C##DEV';
+BEGIN
+    DBMS_OUTPUT.PUT_LINE('123');
+END;
 
-SELECT * FROM all_procedures
-WHERE OWNER = 'C##PROD';
-SELECT * FROM all_procedures
-WHERE OWNER = 'C##DEV';
+
 
 select * FROM all_indexes;
 
 
-select * from all_constraints
-WHERE OWNER = 'C##DEV';
+select * FROM all_procedures;
+select * FROM all_objects
+WHERE owner = 'C##DEV';
+
+SELECT object_name, DBMS_METADATA.GET_DDL(object_type, object_name, schema=>'C##PROD'),  DBMS_LOB.SUBSTR(
+            REGEXP_REPLACE(
+                DBMS_METADATA.GET_DDL(object_type, object_name, schema=>'C##PROD'),
+                '(^|[^a-zA-Z_0-9])' || 'C##PROD' || '([^a-zA-Z_0-9]|$)', '\1' || 'C##DEV' || '\2', 1, 1)
+            , 32767, 1)
+FROM all_objects
+WHERE object_type = 'FUNCTION'
+AND owner = 'C##PROD';
 
 
-    BEGIN
-        DBMS_OUTPUT.PUT_LINE('123');
-    END;
 
-select * from all_cons_columns
+SELECT object_name, DBMS_METADATA.GET_DDL(object_type, object_name, schema=>'C##DEV') as ddl_text
+                    FROM all_objects
+                    WHERE object_type = 'FUNCTION'
+                    AND owner = 'C##DEV';
+                    
+SELECT owner, object_name, DBMS_METADATA.GET_DDL(object_type, object_name, schema=>'C##DEV') as ddl_text
+                    FROM all_objects
+                    WHERE object_type = 'FUNCTION'
+                    AND owner IN ('C##PROD','C##DEV');
+                    
+
+SELECT object_name, DBMS_METADATA.GET_DDL(object_type, object_name, schema=>owner) as ddl_text
+                    FROM all_objects
+                    WHERE object_type = 'TABLE'
+                    AND owner = 'C##DEV';                    
+
+
+
+ SELECT object_name 
+                    FROM all_objects
+                    WHERE owner = 'C##DEV';
