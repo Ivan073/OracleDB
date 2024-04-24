@@ -42,9 +42,5 @@ CREATE INDEX table1_index ON TestTable1 (id);
 
 
 
-DROP TABLE TESTTABLE2;
-
-
-
 
 

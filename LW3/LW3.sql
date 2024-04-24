@@ -25,6 +25,7 @@ CREATE OR REPLACE FUNCTION compare_schemas( -- must be started by SYS, because S
   creatable boolean:=true; -- temp flag for tables with fks 
   escape_flag boolean:=false;
   temp varchar2(32767); -- temp for names
+  temp2 varchar2(32767); -- temp for names
   
   ddl_comment varchar2(32767):='';
   ddl_drop varchar2(32767):='';
@@ -182,11 +183,12 @@ BEGIN
      LOOP
         SELECT DBMS_LOB.SUBSTR(REGEXP_REPLACE(DBMS_METADATA.GET_DDL(object_type, object_name, schema=>dev_schema_name),
                             dev_schema_name, prod_schema_name, 1, 0)
-                        , 32767, 1) as ddl_text INTO temp
+                        , 32767, 1) as ddl_text, object_name INTO temp,temp2
                     FROM all_objects
                     WHERE object_type = 'TABLE'
                     AND owner = dev_schema_name
                     AND object_name = table_names(k);
+         ddl_output:=ddl_output|| 'DROP TABLE'|| ' ' || temp2 || ';' ||CHR(10);
          ddl_output:=ddl_output||temp||';'||CHR(10);
      END LOOP;
   
@@ -210,6 +212,7 @@ BEGIN
                 IF temp_number != 1 THEN
                     index_names.EXTEND;
                     index_names(index_names.COUNT) := dev_index.object_name;
+                    ddl_output:=ddl_output|| 'DROP INDEX'|| ' ' || dev_index.object_name || ';' ||CHR(10);
                     ddl_output:=ddl_output||DBMS_LOB.SUBSTR(
                         REGEXP_REPLACE(
                             dev_index.ddl_text,
@@ -260,6 +263,7 @@ SELECT *
 FROM all_objects
 WHERE Generated='N'
 AND owner IN ('C##DEV', 'C##PROD');
+
 
 
 
