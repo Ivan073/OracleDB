@@ -30,6 +30,7 @@ CREATE OR REPLACE FUNCTION compare_schemas( -- must be started by SYS, because S
   ddl_comment varchar2(32767):='';
   ddl_drop varchar2(32767):='';
   ddl_output varchar2(32767):='';
+  
 BEGIN
     --get differing table names
     SELECT differing_tables BULK COLLECT INTO table_names FROM ( -- names put into separate collection for further sorting
@@ -133,14 +134,60 @@ BEGIN
                     FROM all_objects
                     WHERE object_type = 'FUNCTION'
                     AND owner = dev_schema_name)
-    LOOP
-        SELECT COUNT(*) INTO temp_number FROM all_objects  --compared by ddl     
-        WHERE owner = prod_schema_name
-        AND object_type = 'FUNCTION'
-        AND object_name = dev_func.object_name;        
+    LOOP        
+        
+        
+        escape_flag:=true;
+        --block for comparing 2 sources of functions
+        DECLARE
+              TYPE func1_code_type IS TABLE OF all_source%ROWTYPE;
+              func1_code func1_code_type;
+              func2_code func1_code_type;
+              differences func1_code_type;
+              match_count number:=0;
+            BEGIN
+              SELECT * BULK COLLECT
+              INTO func1_code
+              FROM all_source
+              WHERE name = dev_func.object_name
+              and owner = dev_schema_name
+              ORDER BY line;
             
-        IF temp_number != 1 THEN
-            func_names.EXTEND;
+              SELECT *
+              BULK COLLECT INTO func2_code
+              FROM all_source
+              WHERE name = dev_func.object_name
+              and owner = prod_schema_name
+              ORDER BY line;
+              
+              IF func1_code.COUNT <> func2_code.COUNT THEN
+                escape_flag:=false;
+                EXIT;
+              ELSE
+                FOR i IN 1..func1_code.COUNT LOOP
+                  IF func1_code(i).text <> func2_code(i).text THEN
+                escape_flag:=false;
+                    EXIT;
+                  ELSE
+                    match_count := match_count + 1;
+                  END IF;
+                END LOOP;
+                
+                
+                IF match_count = func1_code.COUNT THEN
+                   DBMS_OUTPUT.PUT_LINE('Yes');
+                ELSE
+                  escape_flag:=false;
+                END IF;
+            END IF;
+            END;
+        
+        
+        IF escape_flag = true THEN
+          CONTINUE;
+        END IF;
+         
+        func_names.EXTEND;
             func_names(func_names.COUNT) := dev_func.object_name; 
             
             ddl_output:=ddl_output||DBMS_LOB.SUBSTR(
@@ -148,8 +195,7 @@ BEGIN
                     dev_func.ddl_text,
                     dev_schema_name, prod_schema_name, 1, 0)
                 , 32767, 1)
-            ||CHR(10);       
-        END IF;
+            ||CHR(10); 
     END LOOP;
     
     
@@ -159,13 +205,56 @@ BEGIN
                     WHERE object_type = 'PROCEDURE'
                     AND owner = dev_schema_name)
     LOOP
-        SELECT COUNT(*) INTO temp_number
-        FROM all_objects
-        WHERE owner = prod_schema_name
-        AND object_type = 'PROCEDURE'
-        AND object_name = dev_proc.object_name;
+        escape_flag:=true;
+        --block for comparing 2 sources of functions
+        DECLARE
+              TYPE func1_code_type IS TABLE OF all_source%ROWTYPE;
+              func1_code func1_code_type;
+              func2_code func1_code_type;
+              differences func1_code_type;
+              match_count number:=0;
+            BEGIN
+              SELECT * BULK COLLECT
+              INTO func1_code
+              FROM all_source
+              WHERE name = dev_proc.object_name
+              and owner = dev_schema_name
+              ORDER BY line;
             
-        IF temp_number != 1 THEN
+              SELECT *
+              BULK COLLECT INTO func2_code
+              FROM all_source
+              WHERE name = dev_proc.object_name
+              and owner = prod_schema_name
+              ORDER BY line;
+              
+              IF func1_code.COUNT <> func2_code.COUNT THEN
+                escape_flag:=false;
+                EXIT;
+              ELSE
+                FOR i IN 1..func1_code.COUNT LOOP
+                  IF func1_code(i).text <> func2_code(i).text THEN
+                escape_flag:=false;
+                    EXIT;
+                  ELSE
+                    match_count := match_count + 1;
+                  END IF;
+                END LOOP;
+                
+                
+                IF match_count = func1_code.COUNT THEN
+                   DBMS_OUTPUT.PUT_LINE('Yes');
+                ELSE
+                  escape_flag:=false;
+                END IF;
+            END IF;
+            END;
+        
+        
+        IF escape_flag = true THEN
+          CONTINUE;
+        END IF;
+            
             proc_names.EXTEND;
             proc_names(proc_names.COUNT) := dev_proc.object_name;   
             
@@ -173,8 +262,7 @@ BEGIN
                 REGEXP_REPLACE(
                     dev_proc.ddl_text,
                     dev_schema_name, prod_schema_name, 1, 0)
-                , 32767, 1)||CHR(10);           
-        END IF;
+                , 32767, 1)||CHR(10);   
     END LOOP;
     
     
@@ -263,6 +351,65 @@ SELECT *
 FROM all_objects
 WHERE Generated='N'
 AND owner IN ('C##DEV', 'C##PROD');
+
+
+
+
+
+SELECT * FROM all_source;
+
+
+
+
+
+
+DECLARE
+  TYPE func1_code_type IS TABLE OF all_source%ROWTYPE;
+  func1_code func1_code_type;
+  func2_code func1_code_type;
+  differences func1_code_type;
+  match_count number:=0;
+BEGIN
+  SELECT * BULK COLLECT
+  INTO func1_code
+  FROM all_source
+  WHERE name = 'FUNC2'
+  and owner = 'C##DEV'
+  ORDER BY line;
+
+  SELECT *
+  BULK COLLECT INTO func2_code
+  FROM all_source
+  WHERE name = 'FUNC2'
+  and owner = 'C##PROD'
+  ORDER BY line;
+  
+  IF func1_code.COUNT <> func2_code.COUNT THEN
+    DBMS_OUTPUT.PUT_LINE('?????????? ????????? ? ?????????? ?? ?????????.');
+  ELSE
+    FOR i IN 1..func1_code.COUNT LOOP
+      IF func1_code(i).text <> func2_code(i).text THEN
+        DBMS_OUTPUT.PUT_LINE(i);
+         DBMS_OUTPUT.PUT_LINE(func1_code(i).text);
+         DBMS_OUTPUT.PUT_LINE(func2_code(i).text);
+        DBMS_OUTPUT.PUT_LINE('No');
+        EXIT;
+      ELSE
+        match_count := match_count + 1;
+      END IF;
+    END LOOP;
+    
+    
+    IF match_count = func1_code.COUNT THEN
+       DBMS_OUTPUT.PUT_LINE('Yes');
+    ELSE
+      DBMS_OUTPUT.PUT_LINE(match_count);
+      DBMS_OUTPUT.PUT_LINE(func1_code.COUNT);
+     DBMS_OUTPUT.PUT_LINE('No');
+    END IF;
+END IF;
+END;
+
 
 
 

@@ -44,3 +44,17 @@ CREATE INDEX table1_index ON TestTable1 (id);
 
 
 
+-------------------------------------------------------------------------------
+
+
+
+create or replace function func2(val1 number)
+return number
+IS
+BEGIN
+   BEGIN
+    DBMS_OUTPUT.PUT_LINE(3);
+    return 1;
+   END;
+END;
+/
