@@ -113,6 +113,7 @@ END;
 
 
 CREATE OR REPLACE PROCEDURE parse_json(json_str IN VARCHAR2)
+AUTHID CURRENT_USER 
 IS
     json_obj JSON_OBJECT_T;
     keys JSON_KEY_LIST;
@@ -127,6 +128,7 @@ IS
     values_list JSON_ARRAY_T; -- INSERT
     set_string VARCHAR2(500); -- UPDATE
     type_list SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();  --CREATE
+    pkey VARCHAR2(100); --CREATE
     
     sql_query VARCHAR2(1000);
 BEGIN
@@ -159,6 +161,8 @@ BEGIN
               type_list.EXTEND;
               type_list(type_list.LAST) := value_array.get_string(i);
             END LOOP;
+        ELSIF key = 'pkey' THEN
+            pkey:=value;
         END IF;
     END LOOP;
 
@@ -202,21 +206,50 @@ BEGIN
       EXECUTE IMMEDIATE sql_query;
     ELSIF action = 'create' THEN
       sql_query := 'CREATE TABLE ' || table_name || '(' || CHR(10);
-      sql_query := sql_query || column_list(1) || ' ' || type_list(1) || ',' || CHR(10);
-        FOR i IN 2..column_list.COUNT-1 LOOP
-              sql_query := sql_query || column_list(i) || ' ' || type_list(i) || ',' || CHR(10);
+        FOR i IN 1..column_list.COUNT-1 LOOP
+              IF column_list(i) = pkey THEN
+                 sql_query := sql_query || column_list(i) || ' ' || type_list(i) || ' PRIMARY KEY' || ',' || CHR(10); 
+              ELSE
+               sql_query := sql_query || column_list(i) || ' ' || type_list(i) || ',' || CHR(10);
+              END IF;
         END LOOP;
-    sql_query := sql_query || column_list(column_list.COUNT) || ' ' || type_list(column_list.COUNT) || CHR(10);
+        IF column_list(column_list.COUNT) = pkey THEN
+            sql_query := sql_query || column_list(column_list.COUNT) || ' ' || type_list(column_list.COUNT) || ' PRIMARY KEY' || CHR(10); 
+          ELSE
+            sql_query := sql_query || column_list(column_list.COUNT) || ' ' || type_list(column_list.COUNT) || CHR(10);
+          END IF;
+     
       sql_query := sql_query || ')';
       DBMS_OUTPUT.PUT_LINE(sql_query);
       EXECUTE IMMEDIATE sql_query;
+      
+      IF pkey IS NOT NULL THEN
+        sql_query := 'CREATE OR REPLACE TRIGGER ' || table_name || '_increment_pkey' || CHR(10)  ||
+            'BEFORE INSERT OR UPDATE ON ' || table_name || CHR(10) ||
+            'FOR EACH ROW
+            WHEN (NEW.'|| pkey ||' IS NULL)
+            DECLARE
+                row_count Number;
+                max_id ' || table_name || '.'|| pkey ||'%TYPE;
+            BEGIN
+                SELECT COUNT(*) INTO row_count FROM ' || table_name || ';
+                IF (row_count != 0) THEN
+                    SELECT Max('|| pkey ||') INTO max_id
+                    FROM ' || table_name || ';
+                    :NEW.'|| pkey ||' := max_id + 1;
+                ELSE
+                    :NEW.'|| pkey ||' := 1;
+                END IF;
+            END;';
+        DBMS_OUTPUT.PUT_LINE(sql_query);
+        EXECUTE IMMEDIATE sql_query;
+      END IF;
+      
     ELSE
       RAISE_APPLICATION_ERROR(-20001, 'UNEXPECTED ACTION');
     END IF;
-    
 END;
 /
-
 
 
 
@@ -246,16 +279,16 @@ END;
 DECLARE
   json_data CLOB;
 BEGIN
-     read_json_file('create.json', json_data);
+     read_json_file('create2.json', json_data);
      parse_json(json_data);
 END;
 
-
+DROP Table Table1;
 
 
 SELECT * FROM Table1;
-INSERT INTO Table1 (id,column1,column2)
-VALUES (1,'6','1');
+INSERT INTO Table1 (column1)
+VALUES ('6');
 
 SELECT * FROM Table2;
 INSERT INTO Table2 (id,column1,column2)
@@ -266,4 +299,57 @@ INSERT ALL
 INTO Table1 (column1, column2) VALUES (2, 3)
 INTO Table1 (column1, column2) VALUES (2, 3)
 INTO Table1 (column1, column2) VALUES (1, 2)
-SELECT 1 FROM DUAL
+SELECT 1 FROM DUAL;
+
+
+
+
+
+
+
+
+
+
+
+
+DROP Trigger Table1_increment_pkey;
+
+CREATE OR REPLACE TRIGGER Table1_increment_pkey
+BEFORE INSERT OR UPDATE ON Table1
+FOR EACH ROW
+                    WHEN (NEW.column2 IS NULL)
+                    DECLARE
+                        row_count Number;
+                        max_id Table1.column2%TYPE;
+                    BEGIN
+                        SELECT COUNT(*) INTO row_count FROM Table1;
+                        IF (row_count != 0) THEN
+                            SELECT Max(column2) INTO max_id
+                            FROM Table1;
+                            :NEW.column2 := max_id + 1;
+                        ELSE
+                            :NEW.column2 := 1;
+                        END IF;
+                    END;
+                    
+                    
+                    
+BEGIN
+EXECUTE IMMEDIATE 'CREATE OR REPLACE TRIGGER Table1_increment_pkey
+BEFORE INSERT OR UPDATE ON Table1
+FOR EACH ROW
+                    WHEN (NEW.column2 IS NULL)
+                    DECLARE
+                        row_count Number;
+                        max_id Table1.column2%TYPE;
+                    BEGIN
+                        SELECT COUNT(*) INTO row_count FROM Table1;
+                        IF (row_count != 0) THEN
+                            SELECT Max(column2) INTO max_id
+                            FROM Table1;
+                            :NEW.column2 := max_id + 1;
+                        ELSE
+                            :NEW.column2 := 1;
+                        END IF;
+                    END;';
+END;

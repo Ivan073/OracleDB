@@ -1,0 +1,7 @@
+{
+	"action":"create",
+	"table":"Table1",
+	"columns":["id","column1","column2"],
+	"types":["number","number","number"],
+	"pkey":"column2"
+}
