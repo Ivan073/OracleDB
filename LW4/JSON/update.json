@@ -1,0 +1,6 @@
+{
+	"action":"update",
+	"table":"Table1",
+	"set": "column1 = 5",
+	"where":"id IS NOT NULL"
+}

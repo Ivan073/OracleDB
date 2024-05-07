@@ -1,0 +1,5 @@
+{
+	"action":"delete",
+	"table":"Table1",
+	"where":"id IS NOT NULL"
+}

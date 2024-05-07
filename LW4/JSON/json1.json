@@ -1,7 +1,0 @@
-{
-	"action":"select",
-	"tables":["Table1"],
-	"columns":["column1","column2"],
-	"join":"",
-	"where":""
-}
