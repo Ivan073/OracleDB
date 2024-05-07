@@ -16,7 +16,6 @@ CREATE Table Table2(
 
 
 
-
 CREATE OR REPLACE PROCEDURE read_json_file( -- function for reading file into string
     p_file_name IN VARCHAR2,
     p_json_data OUT CLOB
@@ -122,15 +121,14 @@ IS
     value_array JSON_ARRAY_T;
     
     action VARCHAR2(100);
-    column_list SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST(); -- SELECT/INSERT
+    column_list SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST(); -- INSERT/CREATE
     where_string VARCHAR2(500); -- UPDATE/DELETE
-    table_name VARCHAR2(100); -- INSERT
+    table_name VARCHAR2(100); -- INSERT/UPDATE/DELETE/DROP/CREATE
     values_list JSON_ARRAY_T; -- INSERT
     set_string VARCHAR2(500); -- UPDATE
+    type_list SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();  --CREATE
     
     sql_query VARCHAR2(1000);
-    
-    select_cursor SYS_REFCURSOR;
 BEGIN
     json_obj := JSON_OBJECT_T(json_str);
     keys := json_obj.get_keys;
@@ -155,6 +153,12 @@ BEGIN
             values_list := json_obj.get_array(key);
         ELSIF key = 'set' THEN
             set_string:=value;
+        ELSIF key = 'types' THEN
+            value_array := json_obj.get_array(key);
+            FOR i in 0..value_array.get_size()-1 LOOP
+              type_list.EXTEND;
+              type_list(type_list.LAST) := value_array.get_string(i);
+            END LOOP;
         END IF;
     END LOOP;
 
@@ -185,13 +189,25 @@ BEGIN
       sql_query := 'UPDATE ' || table_name || CHR(10);
       sql_query := sql_query || 'SET ' || set_string || CHR(10);
       sql_query := sql_query || 'WHERE ' || where_string;
-      
       DBMS_OUTPUT.PUT_LINE(sql_query);
       EXECUTE IMMEDIATE sql_query;
     ELSIF action = 'delete' THEN
       sql_query := 'DELETE ' || table_name || CHR(10);
       sql_query := sql_query || 'WHERE ' || where_string;
-      
+      DBMS_OUTPUT.PUT_LINE(sql_query);
+      EXECUTE IMMEDIATE sql_query;
+    ELSIF action = 'drop' THEN
+      sql_query := 'DROP TABLE ' || table_name;
+      DBMS_OUTPUT.PUT_LINE(sql_query);
+      EXECUTE IMMEDIATE sql_query;
+    ELSIF action = 'create' THEN
+      sql_query := 'CREATE TABLE ' || table_name || '(' || CHR(10);
+      sql_query := sql_query || column_list(1) || ' ' || type_list(1) || ',' || CHR(10);
+        FOR i IN 2..column_list.COUNT-1 LOOP
+              sql_query := sql_query || column_list(i) || ' ' || type_list(i) || ',' || CHR(10);
+        END LOOP;
+    sql_query := sql_query || column_list(column_list.COUNT) || ' ' || type_list(column_list.COUNT) || CHR(10);
+      sql_query := sql_query || ')';
       DBMS_OUTPUT.PUT_LINE(sql_query);
       EXECUTE IMMEDIATE sql_query;
     ELSE
@@ -230,7 +246,7 @@ END;
 DECLARE
   json_data CLOB;
 BEGIN
-     read_json_file('delete.json', json_data);
+     read_json_file('create.json', json_data);
      parse_json(json_data);
 END;
 
