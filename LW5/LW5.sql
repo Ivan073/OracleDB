@@ -131,6 +131,9 @@ END;
 CREATE OR REPLACE PACKAGE log_package AS
   PROCEDURE rollback_tables(rollback_time IN TIMESTAMP);
   PROCEDURE rollback_tables(rollback_interval IN INTERVAL DAY TO SECOND);
+  last_report_time TIMESTAMP;
+  FUNCTION log_report(report_time IN TIMESTAMP) RETURN VARCHAR2;
+  FUNCTION log_report RETURN VARCHAR2;
 END log_package;
 /
 
@@ -201,8 +204,10 @@ CREATE OR REPLACE PACKAGE BODY log_package AS
     WHERE operation_date >= rollback_time;
 END;
 
+
+
   PROCEDURE rollback_tables(rollback_interval IN INTERVAL DAY TO SECOND) IS
-        st_log_rec StudentLog%ROWTYPE;
+         st_log_rec StudentLog%ROWTYPE;
          gr_log_rec GroupLog%ROWTYPE;
          f_log_rec FacultyLog%ROWTYPE;
          rollback_time TIMESTAMP;
@@ -266,6 +271,124 @@ END;
         DELETE FROM FacultyLog
         WHERE operation_date >= rollback_time;
     END;
+    
+    
+    
+    
+    
+  FUNCTION log_report(report_time IN TIMESTAMP)
+  RETURN VARCHAR2
+  IS
+    report_text VARCHAR(32000);
+    st_log_rec StudentLog%ROWTYPE;
+    gr_log_rec GroupLog%ROWTYPE;
+    f_log_rec FacultyLog%ROWTYPE;
+  BEGIN
+    report_text:='<ul>' || CHR(10);
+    FOR log_rec IN ( -- subquery for all revertable operations
+            SELECT id, operation, operation_date, 'Students' as TableName
+            FROM StudentLog
+            WHERE operation_date >= report_time
+            UNION
+            SELECT id, operation, operation_date, 'Groups' as TableName
+            FROM GroupLog
+            WHERE operation_date >= report_time
+            UNION
+            SELECT id, operation, operation_date, 'Faculties' as TableName
+            FROM FacultyLog
+            WHERE operation_date >= report_time
+            ORDER BY operation_date DESC
+        )
+    LOOP
+        report_text:= report_text ||'  <li>Table: ' || log_rec.TableName || ', Operation:'|| log_rec.operation ||', Data:(';
+        IF log_rec.TableName = 'Students' THEN
+            SELECT * INTO st_log_rec FROM StudentLog WHERE id=log_rec.id;
+            report_text:= report_text || 'Id: ' || st_log_rec.st_id || ',Name: ' || st_log_rec.st_name
+            || ',Admission_time: ' || st_log_rec.st_admission_time || ',Group_id: ' || st_log_rec.st_group_id;
+        END IF;
+        IF log_rec.TableName = 'Groups' THEN
+            SELECT * INTO gr_log_rec FROM GroupLog WHERE id=log_rec.id;
+            report_text:= report_text || 'Id: ' || gr_log_rec.gr_id || ',Name: ' || gr_log_rec.gr_name
+            || ',Creation_time: ' || gr_log_rec.gr_creation_time || ',Faculty_id: ' || gr_log_rec.gr_faculty_id;
+        END IF;
+        IF log_rec.TableName = 'Faculties' THEN
+            SELECT * INTO f_log_rec FROM FacultyLog WHERE id=log_rec.id;
+            report_text:= report_text || 'Id: ' || f_log_rec.f_id || ',Name: ' || f_log_rec.f_name
+            || ',Creation_time: ' || f_log_rec.f_creation_time;
+        END IF;
+        report_text:=report_text || ')</li>' || CHR(10);
+    END LOOP;
+    report_text:= report_text ||'</ul>';
+    return report_text;
+  END;
+  
+  
+  
+
+  FUNCTION log_report
+  RETURN VARCHAR2
+  IS
+    report_text VARCHAR(32000);
+    st_log_rec StudentLog%ROWTYPE;
+    gr_log_rec GroupLog%ROWTYPE;
+    f_log_rec FacultyLog%ROWTYPE;
+    report_time TIMESTAMP;
+  BEGIN
+    IF log_package.last_report_time IS NULL THEN
+        SELECT Min(operation_date)
+        INTO log_package.last_report_time
+        FROM ( 
+            SELECT operation_date FROM StudentLog
+            UNION
+            SELECT operation_date FROM GroupLog
+            UNION
+            SELECT operation_date FROM FacultyLog
+        );
+    END IF;
+    report_time:=log_package.last_report_time;
+    
+    report_text:='<ul>' || CHR(10);
+    FOR log_rec IN ( -- subquery for all revertable operations
+            SELECT id, operation, operation_date, 'Students' as TableName
+            FROM StudentLog
+            WHERE operation_date >= report_time
+            UNION
+            SELECT id, operation, operation_date, 'Groups' as TableName
+            FROM GroupLog
+            WHERE operation_date >= report_time
+            UNION
+            SELECT id, operation, operation_date, 'Faculties' as TableName
+            FROM FacultyLog
+            WHERE operation_date >= report_time
+            ORDER BY operation_date DESC
+        )
+    LOOP
+        report_text:= report_text ||'  <li>Table: ' || log_rec.TableName || ', Operation:'|| log_rec.operation ||', Data:(';
+        IF log_rec.TableName = 'Students' THEN
+            SELECT * INTO st_log_rec FROM StudentLog WHERE id=log_rec.id;
+            report_text:= report_text || 'Id: ' || st_log_rec.st_id || ',Name: ' || st_log_rec.st_name
+            || ',Admission_time: ' || st_log_rec.st_admission_time || ',Group_id: ' || st_log_rec.st_group_id;
+        END IF;
+        IF log_rec.TableName = 'Groups' THEN
+            SELECT * INTO gr_log_rec FROM GroupLog WHERE id=log_rec.id;
+            report_text:= report_text || 'Id: ' || gr_log_rec.gr_id || ',Name: ' || gr_log_rec.gr_name
+            || ',Creation_time: ' || gr_log_rec.gr_creation_time || ',Faculty_id: ' || gr_log_rec.gr_faculty_id;
+        END IF;
+        IF log_rec.TableName = 'Faculties' THEN
+            SELECT * INTO f_log_rec FROM FacultyLog WHERE id=log_rec.id;
+            report_text:= report_text || 'Id: ' || f_log_rec.f_id || ',Name: ' || f_log_rec.f_name
+            || ',Creation_time: ' || f_log_rec.f_creation_time;
+        END IF;
+        report_text:=report_text || ')</li>' || CHR(10);
+    END LOOP;
+    report_text:= report_text ||'</ul>';
+    
+    
+    
+    log_package.last_report_time := CURRENT_TIMESTAMP;
+    return report_text;
+  END;
+  
 END log_package;
 
 
@@ -302,7 +425,7 @@ SELECT * FROM Students;
 
 
 
-INSERT INTO Faculties(Id,name,creation_time) VALUES (3,'faculty1',CURRENT_TIMESTAMP);
+INSERT INTO Faculties(Id,name,creation_time) VALUES (4,'faculty1',CURRENT_TIMESTAMP);
 INSERT INTO Groups(Id,name,creation_time,Faculty_id) VALUES (3,'group1',CURRENT_TIMESTAMP,3);
 INSERT INTO Students(Id,name,admission_time,Group_id) VALUES (3,'student1',CURRENT_TIMESTAMP,3);
 
@@ -315,3 +438,7 @@ END;
 BEGIN
   log_package.rollback_tables(INTERVAL '200' SECOND);
 END;
+
+SELECT log_package.log_report(CURRENT_TIMESTAMP) FROM DUAL;
+SELECT log_package.log_report(CURRENT_TIMESTAMP-(INTERVAL '200' SECOND)) FROM DUAL;
+SELECT log_package.log_report FROM DUAL;
