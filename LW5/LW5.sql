@@ -1,4 +1,4 @@
---1 Tables
+0--1 Tables
 DROP TABLE Faculties;
 CREATE TABLE Faculties(
     id number PRIMARY KEY,
@@ -319,6 +319,8 @@ END;
         report_text:=report_text || ')</li>' || CHR(10);
     END LOOP;
     report_text:= report_text ||'</ul>';
+    
+    log_package.last_report_time := CURRENT_TIMESTAMP;
     return report_text;
   END;
   
@@ -425,9 +427,9 @@ SELECT * FROM Students;
 
 
 
-INSERT INTO Faculties(Id,name,creation_time) VALUES (4,'faculty1',CURRENT_TIMESTAMP);
-INSERT INTO Groups(Id,name,creation_time,Faculty_id) VALUES (3,'group1',CURRENT_TIMESTAMP,3);
-INSERT INTO Students(Id,name,admission_time,Group_id) VALUES (3,'student1',CURRENT_TIMESTAMP,3);
+INSERT INTO Faculties(Id,name,creation_time) VALUES (5,'faculty1',CURRENT_TIMESTAMP);
+INSERT INTO Groups(Id,name,creation_time,Faculty_id) VALUES (5,'group1',CURRENT_TIMESTAMP,5);
+INSERT INTO Students(Id,name,admission_time,Group_id) VALUES (5,'student1',CURRENT_TIMESTAMP,5);
 
 
 BEGIN
@@ -436,9 +438,10 @@ END;
 
 
 BEGIN
-  log_package.rollback_tables(INTERVAL '200' SECOND);
+  log_package.rollback_tables(INTERVAL '1000' SECOND);
 END;
 
 SELECT log_package.log_report(CURRENT_TIMESTAMP) FROM DUAL;
 SELECT log_package.log_report(CURRENT_TIMESTAMP-(INTERVAL '200' SECOND)) FROM DUAL;
+SELECT log_package.log_report(CURRENT_TIMESTAMP-(INTERVAL '20000' SECOND)) FROM DUAL;
 SELECT log_package.log_report FROM DUAL;

@@ -1,0 +1,6 @@
+{
+	"action":"insert",
+	"table":"Table1",
+	"columns":["column1"],
+	"values":[["2"]]
+}

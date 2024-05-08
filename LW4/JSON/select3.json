@@ -1,0 +1,7 @@
+{
+	"action":"select",
+	"tables":["Table1"],
+	"columns":["Table1.column1","a.column2"],
+	"where":"Table1.column1 IN (SELECT Table2.column1 FROM Table2)",
+	"join":[["LEFT", "Table2 a", "Table1.column1 = a.column2"],["RIGHT", "Table2 b", "Table1.column1 = b.column2"]]
+}

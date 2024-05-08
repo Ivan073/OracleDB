@@ -1,0 +1,13 @@
+{
+	"action":"select",
+	"tables":["Table1"],
+	"columns":["Table1.column1","a.column2"],
+	"where":[["Table1.column1 IN", {
+		"action":"select",
+		"tables":["Table2"],
+		"columns":["column1"],
+		"where":"",
+		"join":[]
+	}]],
+	"join":[["LEFT", "Table2 a", "Table1.column1 = a.column2"],["RIGHT", "Table2 b", "Table1.column1 = b.column2"]]
+}
